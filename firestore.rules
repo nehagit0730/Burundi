@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function existingData() {
+      return resource.data;
+    }
+
+    function incomingData() {
+      return request.resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // In a real app, you'd check a dedicated admin role or claims.
+      // Here we check the users collection for role == 'admin'
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Helpers ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.email is string &&
+             data.role in ['admin', 'client'];
+    }
+
+    function isValidProperty(data) {
+      return data.keys().hasAll(['title', 'ownerId', 'status', 'type', 'price']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.ownerId == request.auth.uid &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.type in ['house', 'land', 'commercial', 'rental'] &&
+             data.price is number;
+    }
+
+    // --- Collection Rules ---
+
+    // Users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(incomingData());
+      allow update: if isOwner(userId) && 
+                      incomingData().diff(existingData()).affectedKeys().hasOnly(['displayName', 'profilePhoto']) ||
+                    isAdmin();
+    }
+
+    // Properties
+    match /properties/{propertyId} {
+      // Public can read approved properties
+      allow read: if existingData().status == 'approved' || 
+                   isOwner(existingData().ownerId) || 
+                   isAdmin();
+      
+      allow create: if isEmailVerified() && isValidProperty(incomingData()) && incomingData().status == 'pending';
+      
+      allow update: if (isOwner(existingData().ownerId) && existingData().status == 'pending' && 
+                        incomingData().diff(existingData()).affectedKeys().hasOnly(['title', 'description', 'price', 'images', 'location', 'type', 'status']) &&
+                        incomingData().status == 'pending') ||
+                    isAdmin();
+      
+      allow delete: if isAdmin() || (isOwner(existingData().ownerId) && existingData().status == 'pending');
+    }
+
+    // Pages
+    match /pages/{pageId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

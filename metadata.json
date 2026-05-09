@@ -1,0 +1,15 @@
+{
+  "name": "IMMO BURUNDI",
+  "description": "A professional real estate marketplace for Burundi featuring property verification, admin and client dashboards, and comprehensive listings for houses, land, and commercial properties.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "Firebase Authentication",
+    "Cloud Firestore",
+    "Real-time Dashboard",
+    "Property Verification System"
+  ]
+}
